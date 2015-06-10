@@ -1,7 +1,16 @@
 $( document ).ready(function() {
 
-    var map = L.map('map').setView([0,0],7)
+    var map = L.map('map').setView([0,0],3)
     L.tileLayer('http://{s}.tile.osm.org/{z}/{x}/{y}.png').addTo(map);
+
+
+    $.ajax({
+        dataType: "json",
+        url: '/cluster',
+        success: function(data){
+            console.log(data);
+        }
+    });
 
     var addedMarkers = {};
     var clusterMarkers = new L.MarkerClusterGroup({
@@ -23,7 +32,7 @@ $( document ).ready(function() {
         console.log(bbox)
         console.log(map.getZoom())
 
-        if(map.getZoom() >= 6){
+        if(map.getZoom() > 6){
             $.ajax({
                 dataType: "json",
                 url: 'http://api.ais.owm.io/api/box',
