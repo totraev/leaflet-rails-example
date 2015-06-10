@@ -12,5 +12,7 @@
  *
  *= require_tree .
  *= require leaflet
+ *= require MarkerCluster.css
+ *= require MarkerCluster.Default.css
  *= require_self
  */

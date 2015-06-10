@@ -15,5 +15,6 @@
 //= require turbolinks
 
 //= require leaflet
+//= require leaflet.markercluster.js
 
 //= require_tree .
