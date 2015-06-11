@@ -1,3 +1,13 @@
+    /*
+    * Идея реализации:
+    *
+    * Если зум достаточно блиско к карте, то маркеры запрашиваются напрямую с api,
+    * отправляется текущий bbox карты. При передвижении по карте отправляются новые запросы.
+    *
+    * Если значение зума меньше заданного числа, то данные запрашиваются с сервера
+    * в виде уже кластеризованных объектов. Сервер запрашивает данные с api для всей карты,
+    * кластеризует их и кеширует.
+    * */
 
     function Cluster(){
 
@@ -12,21 +22,24 @@
     }
 
     Cluster.prototype = {
-        self: this,
+
 
         init: function(map){
             this.setMap(map)
-            this.setClientsMarkersLayer()
-            this.setServerMarkersLayer()
+            this._setClientsMarkersLayer()
+            this._setServerMarkersLayer()
             this.pullData()
-            this.onMove()
+            this._onMove()
         },
 
-        onMove: function(){
+        //При движении карты подгружаем данные
+        _onMove: function(){
             var self = this
+
 
             this._map.on('moveend', function(e){
                 self.pullData()
+                console.log(self.getZoom())
             })
         },
 
@@ -39,13 +52,21 @@
             return this._map.getZoom()
         },
 
-        setClientsMarkersLayer: function(){
+        //Если zoom больше 6, то запрашиваем данные с api, если нет - кэш с сервера
+        pullData: function(){
+            this.getZoom() > 6 ? this._pullMarkers(this._getBounds()): this._pullClusters();
+        },
+
+        //Устанавливаем слой для маркеров с api
+        _setClientsMarkersLayer: function(){
             this._clientMarkers = new L.MarkerClusterGroup({
-                animateAddingMarkers:false
+                animateAddingMarkers:false,
+                disableClusteringAtZoom: 8
             })
         },
 
-        setServerMarkersLayer: function(){
+        //Слой для кластеров с кеша от сервера
+        _setServerMarkersLayer: function(){
             this._serverMarkers = new L.MarkerClusterGroup({
 
                 singleMarkerMode: true,
@@ -72,21 +93,25 @@
             });
         },
 
-        pullData: function(){
-            this.getZoom() > 5 ? this._pullMarkers(): this._pullClusters();
+        //Формируем прямоугольник запроса. Левый-нижний и правый-верхний угол карты
+        _getBounds: function(){
+            var bounds = this._map.getBounds();
+            var bbox = 'bbox=';
+            var i = 0
+
+            bbox += bounds.getWest()-i + ',';
+            bbox += bounds.getSouth()-i + ',';
+            bbox += bounds.getEast()+i + ',';
+            bbox += bounds.getNorth()+i + ',';
+
+            return bbox
         },
 
-        _pullMarkers: function(){
+        //Запрос данных с api для текушего прямоугольника
+        _pullMarkers: function(bbox){
             this._removeServerLayer()
 
             var self = this
-            var bounds = this._map.getBounds();
-            var bbox = 'bbox=';
-
-            bbox += bounds.getWest() + ',';
-            bbox += bounds.getSouth() + ',';
-            bbox += bounds.getEast() + ',';
-            bbox += bounds.getNorth() + ',';
 
             console.log(bbox);
 
@@ -104,6 +129,7 @@
             });
         },
 
+        //Запрос закешированных кластеров с сервера
         _pullClusters: function(){
             this._removeClientLayer()
 
@@ -121,7 +147,7 @@
                         var marker = new L.marker([item.center[1], item.center[0]])
 
                         marker.on('click', function(){
-                            self._map.setView(marker.getLatLng(), 6)
+                            self._map.setView(marker.getLatLng(), 7)
                         })
 
                         marker.count = item.count
@@ -136,14 +162,17 @@
 
         },
 
+        //Добавлен ли маркер на карту
         _isSet: function(id){
             return (id in this._addedMarkers)
         },
 
+        //Если маркер добавлен, обновляем позицию
         _updateMarker: function(item){
             this._addedMarkers[item.mmsi].setLatLng([item.coord[1],item.coord[0]])
         },
 
+        //Добавляем маркер на карту
         _setMarker: function(item){
             var marker = L.marker([item.coord[1], item.coord[0]]);
 
@@ -151,6 +180,7 @@
             this._clientMarkers.addLayer(marker);
         },
 
+        //Удаляем слой с кластерами с сервара, добавляем слой с маркерами с api
         _removeServerLayer: function(){
             if(this._map.hasLayer(this._serverMarkers)){
                 this._map.removeLayer(this._serverMarkers)
@@ -160,6 +190,7 @@
             }
         },
 
+        //Удаляем слой с маркерами, полученными из api, добавляем слой с кластерами из кеша
         _removeClientLayer: function(){
             if(this._map.hasLayer(this._clientMarkers)){
                 this._map.removeLayer(this._clientMarkers)

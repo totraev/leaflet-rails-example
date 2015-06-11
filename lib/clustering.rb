@@ -1,93 +1,70 @@
 require 'net/http'
 require 'json'
 
+# Если растояние между точками меньше @@radius, то объединяем их в кластер,
+# если точка не принадлежит какому-либо кластеру, то она устанаевливается как кластер
+# c числом элементов равному 1. Центр кластера высчивается как среднее значение всех
+# точек данного кластера. Полученный результат кешируется
+
 module Clustering
-
-  @@grid =     []
   @@clusters = []
+  @@radius = 3**2
 
-
-  def self.get_clusters
-    @@clusters
-  end
-
-
+  # Запускаем скрипт
   def self.run
-    self.init_grid
-    self.pull_data
-  end
-
-
-  def self.init_grid(lng_step=36, lat_step=18)
-    lng = -180;
-    lat = -90;
-
-    while lat < 90 do
-      while lng < 180 do
-        coord = [lng, lat, lng + lng_step, lat + lat_step]
-        @@grid.push(coord)
-        lng += lng_step
-      end
-      lat += lat_step
-      lng = -180
+    result = http_get('http://api.ais.owm.io/api/box?bbox=-180,-90,180,180')
+    result.each do |item|
+      set_cluster(item)
     end
-
-  end
-
-
-  def self.pull_data
-    data_item = []
-
-    @@grid.each do |item|
-      data_item = self.http_get_item('http://api.ais.owm.io/api/box?bbox=', item)
-      cluster = self.clustering(data_item)
-
-      if cluster != nil
-        @@clusters.push(cluster)
-      end
-    end
-
+    puts @@clusters.length
     Rails.cache.write('cluster', @@clusters)
   end
 
-
-  def self.http_get_item(url, params)
-    url += params.join(',');
-    puts url
+  # Заспрос на сервер. Возвращает массив элементов
+  def self.http_get(url)
+    puts 'send request, please wait...'
 
     json = Net::HTTP.get(URI.parse(url))
+
+    puts 'get response'
 
     data = JSON.parse(json)
     data['list']
   end
 
+  # Либо добавляем элемент в кластер, либо создает кластер
+  def self.set_cluster(item)
 
-  def self.clustering(data_item)
-
-    len = data_item.length
-    center_lng = 0
-    center_lat = 0
-
-
-    data_item.each do |point|
-      center_lng += point['coord'][0]
-      center_lat += point['coord'][1]
+    @@clusters.each do |cluster|
+      if self.in_radius(cluster['center'], item['coord'])
+        self.add_item(cluster, item)
+        return
+      end
     end
 
-    if len > 0
-      center = [center_lng/len, center_lat/len]
+    new_cluster={
+        'count'=>1,
+        'center'=>item['coord']
+    }
 
-      puts center
-      puts len
-
-      return cluster = {
-          :center => center,
-          :count => len
-      }
-    else
-      return nil
-    end
+    @@clusters.push(new_cluster)
   end
 
+
+  def self.in_radius(p1, p2)
+    x = (p1[0]-p2[0])**2
+    y = (p1[1]-p2[1])**2
+
+    return (x+y < @@radius)
+  end
+
+  # Добавляет элемент в кластер, устанавливает новое значение центра кластера
+  def self.add_item(cluster, item)
+    lng = cluster['center'][0]*cluster['count'] + item['coord'][0]
+    lat = cluster['center'][1]*cluster['count'] + item['coord'][1]
+
+    cluster['count']+=1
+    cluster['center']=[lng/cluster['count'], lat/cluster['count']]
+  end
 
 end
